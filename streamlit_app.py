@@ -23,7 +23,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern, AI-focused styling
+# Custom CSS for modern, AI-focused styling with proper contrast
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -45,14 +45,25 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
+    /* Ensure main content has proper text color */
+    .main .block-container {
+        color: #1E293B;
+    }
+    
+    /* Header styling */
     .main-header {
         background: var(--ai-gradient);
         padding: 2rem;
         border-radius: 15px;
         margin-bottom: 2rem;
-        color: white;
+        color: white !important;
         text-align: center;
         box-shadow: var(--card-shadow);
+    }
+    
+    .main-header h1, .main-header p {
+        color: white !important;
+        margin: 0.5rem 0;
     }
     
     .ai-badge {
@@ -63,8 +74,10 @@ st.markdown("""
         display: inline-block;
         margin-bottom: 1rem;
         backdrop-filter: blur(10px);
+        color: white !important;
     }
     
+    /* Metric cards with proper text contrast */
     .metric-card {
         background: white;
         border-radius: 15px;
@@ -75,6 +88,7 @@ st.markdown("""
         transition: all 0.3s ease;
         position: relative;
         overflow: hidden;
+        color: #1E293B !important;
     }
     
     .metric-card::before {
@@ -92,6 +106,11 @@ st.markdown("""
         border-color: var(--primary);
     }
     
+    .metric-card div {
+        color: #1E293B !important;
+    }
+    
+    /* AI insights with proper contrast */
     .ai-insight {
         background: linear-gradient(135deg, #667eea20, #764ba220);
         border: 1px solid var(--primary);
@@ -99,6 +118,7 @@ st.markdown("""
         padding: 1.5rem;
         margin: 1rem 0;
         position: relative;
+        color: #1E293B !important;
     }
     
     .ai-insight::before {
@@ -112,6 +132,15 @@ st.markdown("""
         font-size: 1.2rem;
     }
     
+    .ai-insight h4, .ai-insight h5, .ai-insight p, .ai-insight div {
+        color: #1E293B !important;
+    }
+    
+    .ai-insight ul li {
+        color: #1E293B !important;
+    }
+    
+    /* Recommendation cards */
     .recommendation-card {
         background: white;
         border-radius: 12px;
@@ -119,39 +148,35 @@ st.markdown("""
         margin: 1rem 0;
         box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         border-left: 4px solid var(--success);
+        color: #1E293B !important;
     }
     
-    .cost-savings {
-        background: linear-gradient(135deg, #10B98120, #059F6020);
-        border: 1px solid var(--success);
-        border-radius: 10px;
-        padding: 1rem;
-        text-align: center;
-        margin: 1rem 0;
+    .recommendation-card p, .recommendation-card strong {
+        color: #1E293B !important;
     }
     
-    .risk-matrix {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin: 1rem 0;
-    }
-    
+    /* Risk cards */
     .risk-card {
         background: white;
         border-radius: 10px;
         padding: 1rem;
         box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         text-align: center;
+        color: #1E293B !important;
+    }
+    
+    .risk-card h6, .risk-card p {
+        color: #1E293B !important;
     }
     
     .high-risk { border-left: 4px solid var(--danger); }
     .medium-risk { border-left: 4px solid var(--warning); }
     .low-risk { border-left: 4px solid var(--success); }
     
+    /* Button styling */
     .stButton>button {
         background: var(--ai-gradient);
-        color: white;
+        color: white !important;
         border-radius: 10px;
         padding: 0.7rem 1.5rem;
         font-weight: 600;
@@ -165,9 +190,39 @@ st.markdown("""
         box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
     }
     
+    /* Sidebar styling - keep text readable */
     .sidebar .sidebar-content {
         background: linear-gradient(180deg, var(--dark), var(--secondary));
-        color: white;
+        color: white !important;
+    }
+    
+    /* Ensure all text in main content is dark */
+    .main .block-container h1,
+    .main .block-container h2,
+    .main .block-container h3,
+    .main .block-container h4,
+    .main .block-container h5,
+    .main .block-container h6,
+    .main .block-container p,
+    .main .block-container div,
+    .main .block-container span {
+        color: #1E293B !important;
+    }
+    
+    /* Footer with proper contrast */
+    .footer-content {
+        background: var(--ai-gradient);
+        color: white !important;
+        padding: 2rem;
+        border-radius: 10px;
+        margin-top: 2rem;
+        text-align: center;
+    }
+    
+    .footer-content h3,
+    .footer-content p,
+    .footer-content div {
+        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -538,22 +593,36 @@ class EnhancedRDSCalculator:
         """Calculate resource requirements with AI-enhanced logic"""
         profile = self.env_profiles[env]
         
-        # Calculate resources with intelligent scaling
+        # Calculate resources with intelligent scaling - FIXED LOGIC
         base_vcpus = inputs['cores'] * (inputs['cpu_util'] / 100)
-        vcpus = max(2, int(base_vcpus * profile['cpu_factor']))
-        
         base_ram = inputs['ram'] * (inputs['ram_util'] / 100)
-        ram = max(4, int(base_ram * profile['cpu_factor']))
         
-        storage = max(20, int(inputs['storage'] * profile['storage_factor']))
-        
-        # Apply growth projections
+        # Apply environment factors CORRECTLY
+        # PROD gets full or increased resources, DEV gets reduced resources
         if env == "PROD":
-            growth_factor = (1 + inputs['growth']/100) ** 2  # 2-year projection for PROD
+            vcpus = max(4, int(base_vcpus * profile['cpu_factor'] * 1.2))  # 20% buffer for PROD
+            ram = max(8, int(base_ram * profile['cpu_factor'] * 1.2))
+            storage = max(100, int(inputs['storage'] * profile['storage_factor'] * 1.3))  # Extra storage for PROD
+        elif env == "STAGING":
+            vcpus = max(2, int(base_vcpus * profile['cpu_factor']))
+            ram = max(4, int(base_ram * profile['cpu_factor']))
+            storage = max(50, int(inputs['storage'] * profile['storage_factor']))
+        elif env == "QA":
+            vcpus = max(2, int(base_vcpus * profile['cpu_factor']))
+            ram = max(4, int(base_ram * profile['cpu_factor']))
+            storage = max(20, int(inputs['storage'] * profile['storage_factor']))
+        else:  # DEV
+            vcpus = max(1, int(base_vcpus * profile['cpu_factor']))  # Allow smaller instances for DEV
+            ram = max(2, int(base_ram * profile['cpu_factor']))      # Minimum 2GB for DEV
+            storage = max(20, int(inputs['storage'] * profile['storage_factor']))
+        
+        # Apply growth projections only for PROD and STAGING
+        if env in ["PROD", "STAGING"]:
+            growth_factor = (1 + inputs['growth']/100) ** 2  # 2-year projection
             storage = int(storage * growth_factor)
         
-        # Select optimal instance
-        instance = self._select_optimal_instance(vcpus, ram, inputs['engine'], inputs['region'])
+        # Select optimal instance with environment preference
+        instance = self._select_optimal_instance(vcpus, ram, inputs['engine'], inputs['region'], env)
         
         # Calculate comprehensive costs
         costs = self._calculate_comprehensive_costs(instance, storage, inputs, env)
@@ -571,40 +640,100 @@ class EnhancedRDSCalculator:
             "optimization_score": self._calculate_optimization_score(instance, vcpus, ram)
         }
     
-    def _select_optimal_instance(self, vcpus: int, ram: int, engine: str, region: str) -> Dict:
-        """Select optimal instance type using intelligent matching"""
+    def _select_optimal_instance(self, vcpus: int, ram: int, engine: str, region: str, env: str = "PROD") -> Dict:
+        """Select optimal instance type using intelligent matching with environment awareness"""
         region_data = self.instance_db.get(region, self.instance_db["us-east-1"])
         engine_instances = region_data.get(engine, region_data.get("postgres", []))
         
         if not engine_instances:
-            return {"type": "db.m5.large", "vCPU": 2, "memory": 8, "pricing": {"ondemand": 0.4}}
+            # Return environment-appropriate fallback
+            if env == "DEV":
+                return {"type": "db.t3.micro", "vCPU": 2, "memory": 1, "pricing": {"ondemand": 0.017}}
+            elif env in ["QA", "STAGING"]:
+                return {"type": "db.t3.medium", "vCPU": 2, "memory": 4, "pricing": {"ondemand": 0.068}}
+            else:  # PROD
+                return {"type": "db.m5.large", "vCPU": 2, "memory": 8, "pricing": {"ondemand": 0.4}}
+        
+        # Filter instances based on environment preferences
+        if env == "DEV":
+            # Prefer t3 instances for DEV (burstable, cost-effective)
+            preferred_instances = [inst for inst in engine_instances if 't3' in inst["type"]]
+            if not preferred_instances:
+                preferred_instances = engine_instances
+        elif env in ["QA", "STAGING"]:
+            # Prefer t3 and m5 instances for non-PROD
+            preferred_instances = [inst for inst in engine_instances if any(family in inst["type"] for family in ['t3', 'm5'])]
+            if not preferred_instances:
+                preferred_instances = engine_instances
+        else:  # PROD
+            # Prefer r5 and m5 instances for PROD (performance-oriented)
+            preferred_instances = [inst for inst in engine_instances if any(family in inst["type"] for family in ['r5', 'm5'])]
+            if not preferred_instances:
+                preferred_instances = engine_instances
         
         # Score each instance based on fit and cost efficiency
         scored_instances = []
-        for instance in engine_instances:
+        for instance in preferred_instances:
             if instance["type"] == "db.serverless":
-                # Special handling for serverless
-                score = 100 if vcpus <= 4 and ram <= 32 else 50
+                # Serverless scoring based on environment
+                if env == "DEV":
+                    score = 120  # High score for DEV (cost-effective for variable workloads)
+                elif env in ["QA", "STAGING"]:
+                    score = 100
+                else:  # PROD
+                    score = 60   # Lower score for PROD (less predictable performance)
             else:
                 # Calculate fit score
                 cpu_ratio = instance["vCPU"] / max(vcpus, 1)
                 ram_ratio = instance["memory"] / max(ram, 1)
                 
-                # Prefer instances that are 10-50% larger than requirements
-                cpu_fit = 1.0 if 1.1 <= cpu_ratio <= 1.5 else (0.8 if cpu_ratio >= 1.0 else 0.3)
-                ram_fit = 1.0 if 1.1 <= ram_ratio <= 1.5 else (0.8 if ram_ratio >= 1.0 else 0.3)
+                # Environment-specific scoring
+                if env == "PROD":
+                    # For PROD: Prefer 20-80% larger than requirements (performance headroom)
+                    cpu_fit = 1.2 if 1.2 <= cpu_ratio <= 1.8 else (1.0 if cpu_ratio >= 1.0 else 0.3)
+                    ram_fit = 1.2 if 1.2 <= ram_ratio <= 1.8 else (1.0 if ram_ratio >= 1.0 else 0.3)
+                    cost_weight = 0.3  # Less concerned about cost for PROD
+                elif env in ["QA", "STAGING"]:
+                    # For non-PROD: Prefer 10-50% larger than requirements
+                    cpu_fit = 1.0 if 1.1 <= cpu_ratio <= 1.5 else (0.8 if cpu_ratio >= 1.0 else 0.4)
+                    ram_fit = 1.0 if 1.1 <= ram_ratio <= 1.5 else (0.8 if ram_ratio >= 1.0 else 0.4)
+                    cost_weight = 0.5  # Balanced cost/performance
+                else:  # DEV
+                    # For DEV: Prefer exact fit or slightly larger (cost optimization)
+                    cpu_fit = 1.0 if 1.0 <= cpu_ratio <= 1.3 else (0.7 if cpu_ratio >= 1.0 else 0.2)
+                    ram_fit = 1.0 if 1.0 <= ram_ratio <= 1.3 else (0.7 if ram_ratio >= 1.0 else 0.2)
+                    cost_weight = 0.7  # High concern about cost for DEV
                 
                 # Cost efficiency (lower cost per unit resource is better)
                 cost_per_vcpu = instance["pricing"]["ondemand"] / max(instance["vCPU"], 1)
-                cost_efficiency = 1.0 / (cost_per_vcpu + 1)
+                cost_efficiency = (1.0 / (cost_per_vcpu + 1)) * cost_weight
                 
-                score = (cpu_fit + ram_fit + cost_efficiency) * 100
+                # Performance preference for different environments
+                performance_bonus = 0
+                if env == "PROD":
+                    # Bonus for high-performance instance families
+                    if 'r5' in instance["type"]:
+                        performance_bonus = 0.3
+                    elif 'm5' in instance["type"]:
+                        performance_bonus = 0.2
+                elif env == "DEV":
+                    # Bonus for cost-effective instance families
+                    if 't3' in instance["type"]:
+                        performance_bonus = 0.3
+                    elif 't2' in instance["type"]:
+                        performance_bonus = 0.2
+                
+                score = (cpu_fit + ram_fit + cost_efficiency + performance_bonus) * 100
             
             scored_instances.append((score, instance))
         
         # Return the highest scored instance
-        scored_instances.sort(key=lambda x: x[0], reverse=True)
-        return scored_instances[0][1]
+        if scored_instances:
+            scored_instances.sort(key=lambda x: x[0], reverse=True)
+            return scored_instances[0][1]
+        
+        # Fallback if no instances found
+        return engine_instances[0] if engine_instances else {"type": "db.m5.large", "vCPU": 2, "memory": 8, "pricing": {"ondemand": 0.4}}
     
     def _calculate_comprehensive_costs(self, instance: Dict, storage: int, inputs: Dict, env: str) -> Dict:
         """Calculate comprehensive monthly costs"""
@@ -670,7 +799,7 @@ def main():
     # Header with AI branding
     st.markdown("""
     <div class="main-header">
-        <div class="ai-badge">🤖 Powered by Claude AI</div>
+        <div class="ai-badge">🤖 Powered by AI</div>
         <h1>AI Database Migration Studio</h1>
         <p>Enterprise database migration planning with intelligent recommendations, cost optimization, and risk assessment</p>
     </div>
@@ -1107,30 +1236,30 @@ def display_results(recommendations, ai_insights, inputs):
     
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
-                border: 1px solid #0ea5e9; border-radius: 12px; padding: 2rem; margin: 1rem 0;">
-        <h4>💼 Executive Summary</h4>
+                border: 1px solid #0ea5e9; border-radius: 12px; padding: 2rem; margin: 1rem 0; color: #1E293B;">
+        <h4 style="color: #1E293B;">💼 Executive Summary</h4>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin: 1rem 0;">
             <div>
-                <h5>💰 Financial Impact</h5>
-                <p>• <strong>Annual Cost:</strong> ${prod_rec['annual_cost']:,.0f}</p>
-                <p>• <strong>Annual Savings:</strong> ${annual_savings:,.0f}</p>
-                <p>• <strong>ROI:</strong> {roi_percentage:.0f}%</p>
+                <h5 style="color: #1E293B;">💰 Financial Impact</h5>
+                <p style="color: #1E293B;">• <strong>Annual Cost:</strong> ${prod_rec['annual_cost']:,.0f}</p>
+                <p style="color: #1E293B;">• <strong>Annual Savings:</strong> ${annual_savings:,.0f}</p>
+                <p style="color: #1E293B;">• <strong>ROI:</strong> {roi_percentage:.0f}%</p>
             </div>
             <div>
-                <h5>⚡ Performance Benefits</h5>
-                <p>• <strong>Improved Availability:</strong> 99.99% SLA</p>
-                <p>• <strong>Auto Scaling:</strong> Dynamic resource allocation</p>
-                <p>• <strong>Backup & Recovery:</strong> Automated & reliable</p>
+                <h5 style="color: #1E293B;">⚡ Performance Benefits</h5>
+                <p style="color: #1E293B;">• <strong>Improved Availability:</strong> 99.99% SLA</p>
+                <p style="color: #1E293B;">• <strong>Auto Scaling:</strong> Dynamic resource allocation</p>
+                <p style="color: #1E293B;">• <strong>Backup & Recovery:</strong> Automated & reliable</p>
             </div>
             <div>
-                <h5>🎯 Strategic Advantages</h5>
-                <p>• <strong>Reduced Ops Overhead:</strong> Managed service benefits</p>
-                <p>• <strong>Enhanced Security:</strong> AWS security framework</p>
-                <p>• <strong>Global Scalability:</strong> Multi-region deployment ready</p>
+                <h5 style="color: #1E293B;">🎯 Strategic Advantages</h5>
+                <p style="color: #1E293B;">• <strong>Reduced Ops Overhead:</strong> Managed service benefits</p>
+                <p style="color: #1E293B;">• <strong>Enhanced Security:</strong> AWS security framework</p>
+                <p style="color: #1E293B;">• <strong>Global Scalability:</strong> Multi-region deployment ready</p>
             </div>
         </div>
-        <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 8px; margin-top: 1rem;">
-            <strong>💡 Recommendation:</strong> Proceed with migration to achieve significant cost savings, 
+        <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 8px; margin-top: 1rem; color: #1E293B;">
+            <strong style="color: #1E293B;">💡 Recommendation:</strong> Proceed with migration to achieve significant cost savings, 
             improved performance, and reduced operational complexity. Estimated payback period: 
             {12 / max(roi_percentage/100, 0.1):.0f} months.
         </div>
@@ -1172,10 +1301,9 @@ def render_footer():
     """Render application footer"""
     st.markdown("---")
     st.markdown("""
-    <div style="text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                border-radius: 10px; color: white; margin-top: 2rem;">
+    <div class="footer-content">
         <h3>🚀 AI Database Migration Studio</h3>
-        <p><strong>Powered by Claude AI • Enterprise-Ready • Cloud-Native</strong></p>
+        <p><strong>Powered by AI • Enterprise-Ready • Cloud-Native</strong></p>
         <div style="display: flex; justify-content: center; gap: 2rem; margin-top: 1rem; flex-wrap: wrap;">
             <div>✅ Multi-Engine Support</div>
             <div>🤖 AI-Powered Analysis</div>
