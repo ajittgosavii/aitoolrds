@@ -1,5 +1,5 @@
 """
-Utility functions for AI Database Migration Studio
+Complete utility functions for AI Database Migration Studio
 """
 import pandas as pd
 import json
@@ -8,6 +8,252 @@ import base64
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
+
+def parse_uploaded_file(uploaded_file):
+    """Parse uploaded CSV/Excel file into a list of input dictionaries"""
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(uploaded_file)
+        else:
+            return None, ["Unsupported file format. Please upload CSV or Excel file."]
+        
+        print(f"=== DEBUG: Original DataFrame ===")
+        print(f"Shape: {df.shape}")
+        print(f"Columns: {list(df.columns)}")
+        print(f"First few rows:\n{df.head()}")
+        
+    except Exception as e:
+        return None, [f"Error reading file: {str(e)}"]
+    
+    # Required columns mapping
+    required_columns = {
+        'database_engine': 'engine',
+        'aws_region': 'region',
+        'cpu_cores': 'cores',
+        'cpu_utilization': 'cpu_util',
+        'ram_gb': 'ram',
+        'ram_utilization': 'ram_util',
+        'storage_gb': 'storage',
+        'iops': 'iops'
+    }
+    
+    # Optional columns with defaults
+    optional_columns = {
+        'growth_rate': ('growth', 15),
+        'backup_days': ('backup_days', 7),
+        'projection_years': ('years', 3),
+        'data_transfer_gb': ('data_transfer_gb', 100)
+    }
+    
+    # Check for required columns
+    missing_columns = [col for col in required_columns.keys() if col not in df.columns]
+    if missing_columns:
+        return None, [f"Missing required columns: {', '.join(missing_columns)}"]
+    
+    print(f"DEBUG: All required columns found: {list(required_columns.keys())}")
+    
+    # Create a copy of the dataframe to avoid modifying the original
+    df_processed = df.copy()
+    
+    # Rename columns to match input structure
+    df_processed.rename(columns={k: v for k, v in required_columns.items()}, inplace=True)
+    
+    # Add optional columns with defaults
+    for col, (new_name, default) in optional_columns.items():
+        if col in df.columns:
+            df_processed[new_name] = df[col]
+        else:
+            df_processed[new_name] = default
+    
+    # Add database name if exists
+    if 'database_name' in df.columns:
+        df_processed['db_name'] = df['database_name']
+    else:
+        df_processed['db_name'] = [f"Database {i+1}" for i in range(len(df_processed))]
+    
+    print(f"DEBUG: Processed DataFrame columns: {list(df_processed.columns)}")
+    print(f"DEBUG: Sample processed row: {df_processed.iloc[0].to_dict()}")
+    
+    # Convert to list of dictionaries
+    inputs_list = df_processed.to_dict(orient='records')
+    
+    print(f"DEBUG: Created {len(inputs_list)} input dictionaries")
+    
+    # Validate each input set
+    valid_inputs = []
+    errors = []
+    
+    for idx, input_data in enumerate(inputs_list):
+        input_errors = validate_inputs(input_data)
+        if not input_errors:
+            valid_inputs.append(input_data)
+            print(f"DEBUG: Row {idx+1} ({input_data.get('db_name', 'Unknown')}) - VALID")
+        else:
+            db_name = input_data.get('db_name', f"Row {idx+1}")
+            error_msg = f"{db_name}: {', '.join(input_errors)}"
+            errors.append(error_msg)
+            print(f"DEBUG: Row {idx+1} ({db_name}) - INVALID: {input_errors}")
+    
+    print(f"DEBUG: Final result - {len(valid_inputs)} valid, {len(errors)} errors")
+    
+    return valid_inputs, errors
+
+def export_full_report(all_results):
+    """Export complete analysis report to Excel"""
+    output = io.BytesIO()
+    
+    try:
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            # Create summary sheet
+            summary_data = []
+            for result in all_results:
+                prod_rec = result['recommendations']['PROD']
+                summary_data.append({
+                    "Database": result['inputs'].get('db_name', 'N/A'),
+                    "Engine": result['inputs'].get('engine', 'N/A'),
+                    "Instance Type": prod_rec['instance_type'],
+                    "vCPUs": prod_rec['vcpus'],
+                    "RAM (GB)": prod_rec['ram_gb'],
+                    "Storage (GB)": prod_rec['storage_gb'],
+                    "Monthly Cost": prod_rec['monthly_cost'],
+                    "Annual Cost": prod_rec['annual_cost'],
+                    "Optimization Score": f"{prod_rec.get('optimization_score', 85)}%"
+                })
+            
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Create detailed sheets for each database
+            for i, result in enumerate(all_results):
+                db_name = result['inputs'].get('db_name', f'Database_{i+1}')
+                # Clean sheet name for Excel (remove invalid characters and limit length)
+                sheet_name = ''.join(c for c in db_name if c.isalnum() or c in ' -_')[:31]
+                
+                # Prepare detailed data
+                detail_rows = []
+                
+                # Input parameters
+                detail_rows.append(["CONFIGURATION", ""])
+                for key, value in result['inputs'].items():
+                    detail_rows.append([key.replace('_', ' ').title(), value])
+                
+                detail_rows.append(["", ""])
+                detail_rows.append(["RECOMMENDATIONS", ""])
+                
+                # Environment recommendations
+                for env, rec in result['recommendations'].items():
+                    detail_rows.append([f"{env} Environment", ""])
+                    detail_rows.append(["Instance Type", rec['instance_type']])
+                    detail_rows.append(["vCPUs", rec['vcpus']])
+                    detail_rows.append(["RAM (GB)", rec['ram_gb']])
+                    detail_rows.append(["Storage (GB)", rec['storage_gb']])
+                    detail_rows.append(["Monthly Cost", f"${rec['monthly_cost']:.2f}"])
+                    detail_rows.append(["Annual Cost", f"${rec['annual_cost']:.2f}"])
+                    detail_rows.append(["", ""])
+                
+                # AI insights if available
+                if result.get('ai_insights'):
+                    detail_rows.append(["AI INSIGHTS", ""])
+                    ai_insights = result['ai_insights']
+                    
+                    if 'workload' in ai_insights and 'error' not in ai_insights['workload']:
+                        workload = ai_insights['workload']
+                        detail_rows.append(["Workload Type", workload.get('workload_type', 'N/A')])
+                        detail_rows.append(["Complexity", workload.get('complexity', 'N/A')])
+                        detail_rows.append(["Timeline", workload.get('timeline', 'N/A')])
+                        
+                        if workload.get('recommendations'):
+                            detail_rows.append(["AI Recommendations", ""])
+                            for rec in workload['recommendations'][:5]:
+                                detail_rows.append(["", rec])
+                
+                # Convert to DataFrame and save
+                detail_df = pd.DataFrame(detail_rows, columns=['Parameter', 'Value'])
+                detail_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        output.seek(0)
+        return output
+        
+    except Exception as e:
+        print(f"Error creating Excel report: {str(e)}")
+        # Return a simple CSV as fallback
+        summary_data = []
+        for result in all_results:
+            prod_rec = result['recommendations']['PROD']
+            summary_data.append({
+                "Database": result['inputs'].get('db_name', 'N/A'),
+                "Engine": result['inputs'].get('engine', 'N/A'),
+                "Instance_Type": prod_rec['instance_type'],
+                "Monthly_Cost": prod_rec['monthly_cost']
+            })
+        
+        summary_df = pd.DataFrame(summary_data)
+        csv_output = io.StringIO()
+        summary_df.to_csv(csv_output, index=False)
+        return io.BytesIO(csv_output.getvalue().encode())
+
+def validate_inputs(inputs: Dict) -> List[str]:
+    """Validate user inputs and return list of errors"""
+    errors = []
+    
+    # Required fields validation
+    required_fields = {
+        'cores': 'CPU Cores',
+        'ram': 'RAM (GB)',
+        'storage': 'Storage (GB)',
+        'cpu_util': 'CPU Utilization',
+        'ram_util': 'RAM Utilization'
+    }
+    
+    for field, display_name in required_fields.items():
+        if field not in inputs:
+            errors.append(f"{display_name} is required")
+        elif pd.isna(inputs[field]) or inputs[field] is None:
+            errors.append(f"{display_name} cannot be empty")
+        elif not isinstance(inputs[field], (int, float)) or inputs[field] <= 0:
+            errors.append(f"{display_name} must be a positive number (got: {inputs[field]})")
+    
+    # Range validations (only if values exist and are numeric)
+    if 'cpu_util' in inputs and isinstance(inputs['cpu_util'], (int, float)):
+        if inputs['cpu_util'] > 100:
+            errors.append("CPU utilization cannot exceed 100%")
+    
+    if 'ram_util' in inputs and isinstance(inputs['ram_util'], (int, float)):
+        if inputs['ram_util'] > 100:
+            errors.append("RAM utilization cannot exceed 100%")
+    
+    if 'growth' in inputs and isinstance(inputs['growth'], (int, float)):
+        if inputs['growth'] < 0:
+            errors.append("Growth rate cannot be negative")
+        elif inputs['growth'] > 1000:
+            errors.append("Growth rate seems unrealistic (>1000%)")
+    
+    # Logical validations (only if values exist and are numeric)
+    if 'cores' in inputs and isinstance(inputs['cores'], (int, float)):
+        if inputs['cores'] > 1000:
+            errors.append("CPU cores count seems unrealistic (>1000)")
+    
+    if 'ram' in inputs and isinstance(inputs['ram'], (int, float)):
+        if inputs['ram'] > 10000:
+            errors.append("RAM amount seems unrealistic (>10TB)")
+    
+    if 'storage' in inputs and isinstance(inputs['storage'], (int, float)):
+        if inputs['storage'] > 1000000:
+            errors.append("Storage amount seems unrealistic (>1PB)")
+    
+    # Engine validation
+    valid_engines = ['oracle-ee', 'oracle-se', 'postgres', 'aurora-postgresql', 'aurora-mysql', 'sqlserver']
+    if 'engine' in inputs and inputs['engine'] not in valid_engines:
+        errors.append(f"Unsupported database engine: {inputs['engine']}. Valid options: {', '.join(valid_engines)}")
+    
+    # Region validation
+    valid_regions = ["us-east-1", "us-west-1", "us-west-2", "eu-west-1", "ap-southeast-1"]
+    if 'region' in inputs and inputs['region'] not in valid_regions:
+        errors.append(f"Unsupported AWS region: {inputs['region']}. Valid options: {', '.join(valid_regions)}")
+    
+    return errors
 
 def format_currency(amount: float, currency: str = "USD") -> str:
     """Format currency amounts with proper formatting"""
@@ -60,50 +306,6 @@ def generate_recommendation_score(
     ) * 100
     
     return min(100, max(0, int(score)))
-
-def validate_inputs(inputs: Dict) -> List[str]:
-    """Validate user inputs and return list of errors"""
-    errors = []
-    
-    # Required fields validation
-    required_fields = {
-        'cores': 'CPU Cores',
-        'ram': 'RAM (GB)',
-        'storage': 'Storage (GB)',
-        'cpu_util': 'CPU Utilization',
-        'ram_util': 'RAM Utilization'
-    }
-    
-    for field, display_name in required_fields.items():
-        if field not in inputs:
-            errors.append(f"{display_name} is required")
-        elif inputs[field] <= 0:
-            errors.append(f"{display_name} must be greater than 0")
-    
-    # Range validations
-    if inputs.get('cpu_util', 0) > 100:
-        errors.append("CPU utilization cannot exceed 100%")
-    
-    if inputs.get('ram_util', 0) > 100:
-        errors.append("RAM utilization cannot exceed 100%")
-    
-    if inputs.get('growth', 0) < 0:
-        errors.append("Growth rate cannot be negative")
-    
-    if inputs.get('growth', 0) > 1000:
-        errors.append("Growth rate seems unrealistic (>1000%)")
-    
-    # Logical validations
-    if inputs.get('cores', 0) > 1000:
-        errors.append("CPU cores count seems unrealistic (>1000)")
-    
-    if inputs.get('ram', 0) > 10000:
-        errors.append("RAM amount seems unrealistic (>10TB)")
-    
-    if inputs.get('storage', 0) > 1000000:
-        errors.append("Storage amount seems unrealistic (>1PB)")
-    
-    return errors
 
 def get_instance_recommendations(vcpus: int, ram: int, engine: str) -> List[Dict[str, str]]:
     """Get instance type recommendations based on requirements"""
@@ -190,180 +392,6 @@ def calculate_storage_costs(
     costs["total"] = sum(costs.values())
     return costs
 
-def generate_migration_timeline(
-    complexity: str = "Medium",
-    database_size_gb: int = 1000,
-    num_databases: int = 1,
-    has_custom_apps: bool = True
-) -> Dict[str, Any]:
-    """Generate realistic migration timeline based on complexity"""
-    
-    # Base timeline factors
-    complexity_multipliers = {
-        "Low": 0.7,
-        "Medium": 1.0, 
-        "High": 1.5,
-        "Critical": 2.0
-    }
-    
-    # Base phases in weeks
-    base_timeline = {
-        "Assessment & Planning": 2,
-        "Environment Setup": 1,
-        "Schema Migration": 2,
-        "Data Migration": 3,
-        "Application Testing": 4,
-        "Performance Tuning": 2,
-        "Go-Live & Support": 1
-    }
-    
-    multiplier = complexity_multipliers.get(complexity, 1.0)
-    
-    # Adjust for database size (large databases take longer)
-    if database_size_gb > 10000:  # >10TB
-        multiplier *= 1.5
-    elif database_size_gb > 1000:  # >1TB
-        multiplier *= 1.2
-    
-    # Adjust for number of databases
-    if num_databases > 5:
-        multiplier *= 1.3
-    elif num_databases > 1:
-        multiplier *= 1.1
-    
-    # Adjust for custom applications
-    if has_custom_apps:
-        multiplier *= 1.2
-    
-    # Calculate adjusted timeline
-    adjusted_timeline = {}
-    total_weeks = 0
-    
-    for phase, weeks in base_timeline.items():
-        adjusted_weeks = max(1, int(weeks * multiplier))
-        adjusted_timeline[phase] = adjusted_weeks
-        total_weeks += adjusted_weeks
-    
-    return {
-        "phases": adjusted_timeline,
-        "total_weeks": total_weeks,
-        "complexity_factor": multiplier,
-        "critical_path": ["Schema Migration", "Data Migration", "Application Testing"]
-    }
-
-def calculate_risk_score(
-    database_size_gb: int,
-    complexity: str,
-    custom_applications: bool,
-    compliance_requirements: List[str],
-    downtime_tolerance_hours: float
-) -> Dict[str, Any]:
-    """Calculate comprehensive risk assessment"""
-    
-    risk_factors = {}
-    
-    # Size-based risk
-    if database_size_gb > 10000:
-        risk_factors["data_size"] = {"score": 8, "description": "Very large database migration"}
-    elif database_size_gb > 1000:
-        risk_factors["data_size"] = {"score": 5, "description": "Large database migration"}
-    else:
-        risk_factors["data_size"] = {"score": 2, "description": "Manageable database size"}
-    
-    # Complexity risk
-    complexity_scores = {"Low": 2, "Medium": 5, "High": 7, "Critical": 9}
-    risk_factors["complexity"] = {
-        "score": complexity_scores.get(complexity, 5),
-        "description": f"{complexity} complexity migration"
-    }
-    
-    # Application risk
-    if custom_applications:
-        risk_factors["applications"] = {
-            "score": 6,
-            "description": "Custom applications require extensive testing"
-        }
-    else:
-        risk_factors["applications"] = {
-            "score": 2,
-            "description": "Standard applications with known compatibility"
-        }
-    
-    # Compliance risk
-    compliance_score = min(8, len(compliance_requirements) * 2)
-    risk_factors["compliance"] = {
-        "score": compliance_score,
-        "description": f"Multiple compliance requirements: {', '.join(compliance_requirements)}"
-    }
-    
-    # Downtime risk
-    if downtime_tolerance_hours < 1:
-        risk_factors["downtime"] = {"score": 9, "description": "Minimal downtime tolerance"}
-    elif downtime_tolerance_hours < 4:
-        risk_factors["downtime"] = {"score": 6, "description": "Low downtime tolerance"}
-    else:
-        risk_factors["downtime"] = {"score": 3, "description": "Acceptable downtime window"}
-    
-    # Calculate overall risk
-    total_score = sum(factor["score"] for factor in risk_factors.values())
-    max_possible = len(risk_factors) * 10
-    risk_percentage = (total_score / max_possible) * 100
-    
-    if risk_percentage < 30:
-        risk_level = "Low"
-        risk_color = "green"
-    elif risk_percentage < 60:
-        risk_level = "Medium" 
-        risk_color = "orange"
-    else:
-        risk_level = "High"
-        risk_color = "red"
-    
-    return {
-        "overall_risk": risk_level,
-        "risk_percentage": risk_percentage,
-        "risk_color": risk_color,
-        "risk_factors": risk_factors,
-        "mitigation_recommendations": generate_risk_mitigations(risk_factors)
-    }
-
-def generate_risk_mitigations(risk_factors: Dict) -> List[str]:
-    """Generate risk mitigation strategies based on identified risks"""
-    mitigations = []
-    
-    for factor_name, factor_data in risk_factors.items():
-        score = factor_data["score"]
-        
-        if factor_name == "data_size" and score >= 5:
-            mitigations.append("Implement incremental data migration with minimal downtime")
-            mitigations.append("Use AWS DMS for large-scale data replication")
-        
-        if factor_name == "complexity" and score >= 6:
-            mitigations.append("Engage AWS Professional Services for complex migrations")
-            mitigations.append("Conduct thorough proof-of-concept testing")
-        
-        if factor_name == "applications" and score >= 5:
-            mitigations.append("Implement comprehensive application testing framework")
-            mitigations.append("Plan for application code modifications and optimization")
-        
-        if factor_name == "compliance" and score >= 4:
-            mitigations.append("Establish compliance validation checkpoints")
-            mitigations.append("Implement automated compliance monitoring")
-        
-        if factor_name == "downtime" and score >= 6:
-            mitigations.append("Design zero-downtime migration strategy")
-            mitigations.append("Implement blue-green deployment approach")
-    
-    # Add general mitigations
-    mitigations.extend([
-        "Establish comprehensive rollback procedures",
-        "Implement real-time monitoring and alerting",
-        "Plan for gradual traffic migration",
-        "Conduct load testing before go-live"
-    ])
-    
-    return list(set(mitigations))  # Remove duplicates
-
 def export_to_json(data: Dict, filename: str = None) -> str:
     """Export data to JSON string or file"""
     json_str = json.dumps(data, indent=2, default=str)
@@ -418,21 +446,6 @@ def calculate_network_transfer_time(
         "estimated_days": actual_time_hours / 24,
         "bandwidth_mbps": bandwidth_mbps,
         "efficiency_factor": efficiency_factor
-    }
-
-def generate_cost_breakdown_chart_data(cost_breakdown: Dict[str, float]) -> Dict:
-    """Generate data for cost breakdown charts"""
-    
-    # Filter out zero costs
-    filtered_costs = {k: v for k, v in cost_breakdown.items() if v > 0}
-    
-    return {
-        "labels": list(filtered_costs.keys()),
-        "values": list(filtered_costs.values()),
-        "colors": [
-            "#6366F1", "#8B5CF6", "#10B981", "#F59E0B", 
-            "#EF4444", "#06B6D4", "#84CC16", "#F97316"
-        ][:len(filtered_costs)]
     }
 
 def validate_api_key(api_key: str) -> bool:
